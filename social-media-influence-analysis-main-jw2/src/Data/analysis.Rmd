@@ -1,0 +1,96 @@
+---
+title: "Report"
+output:
+  pdf_document: default
+  word_document: default
+date: "2023-10-29"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r include=FALSE}
+library(lfe)
+library(ggplot2)
+library(readr)
+library(glue)
+library(modelsummary)
+
+setwd("/Users/xusiqing/Desktop/CSC494/social-media-influence-analysis-main-jw2/src/Data")
+get_model <- function(model_tbl, reverse) {
+  # if we don't reverse, then we are using demand to predict supply
+  # so if reverse is FALSE, then we use demands as independent variables
+  if(!reverse) {
+    model <- felm (supply ~ demand + demand_lag_1 + demand_lag_2 + demand_lag_3 + demand_lag_4 | time_window + bin, data = model_tbl)
+  } else {
+    model <- felm (demand ~ supply + supply_lag_1 + supply_lag_2 + supply_lag_3 + supply_lag_4 |  time_window + bin, data = model_tbl)
+  }
+  return(model)
+}
+```
+
+
+
+# Create panels for bin and core agent
+
+```{r}
+library(plm)
+library(lmtest)
+mdl <- read_csv("/Users/xusiqing/Desktop/CSC494/social-media-influence-analysis-main-jw2/src/Data/13_15_17_cns/13_15_17_cns.csv")
+
+library(tidyverse)
+
+# c2 <- read_csv("/Users/xusiqing/Desktop/CSC494/social-media-influence-analysis-main-jw2/src/Data/227629567/227629567.csv")
+# c2$corenode <- 2
+# 
+# c3 <- read_csv("/Users/xusiqing/Desktop/CSC494/social-media-influence-analysis-main-jw2/src/Data/3161912605/3161912605.csv")
+# c3$corenode <- 4
+# 
+# mdl <- rbind(c1,c2,c3)
+# mdl
+# df.pd <- pdata.frame(mdl, index = c("bin", "corenode"), drop.index = FALSE)
+
+
+# granger: demand drives supply
+
+grangertest(supply ~ demand, data = mdl, order = 7L)
+
+# granger: supply drives demand
+grangertest(demand ~ supply, data = mdl, order = 7L)
+
+
+
+df.pd <- pdata.frame(mdl, index = c("bin"), drop.index = FALSE)
+# panel: demand drives supply
+pgrangertest(supply ~ demand, data = df.pd, order = 7L)
+
+# panel: supply drives demand
+pgrangertest(supply ~ demand, data = df.pd, order = 7L)
+
+```
+# Check relationship between producer and core agents
+
+```{r}
+mdl <- read_csv("/Users/xusiqing/Desktop/CSC494/social-media-influence-analysis-main-jw2/src/Data/13_15_17_cns/13_15_17_cns.csv")
+df.pd <- pdata.frame(mdl, index = c("bin"), drop.index = FALSE)
+# panel data
+pgrangertest(supply ~ demand, data = df.pd, order = 7L)
+
+# granger test
+
+grangertest(supply ~ demand, data = mdl, order = 7L)
+```
+
+
+
+```{r include=FALSE }
+m_6_9 <- draw_both(c(6, 9), FALSE)
+m_11_13 <- draw_both(c(11, 13), FALSE)
+m_9_13 <- draw_both(c(9, 13), FALSE)
+m_13_15 <- draw_both(c(13,15), FALSE)
+m_13_17 <- draw_both(c(13, 17), FALSE)
+m_15_17 <- draw_both(c(15, 17), FALSE)
+```
+
