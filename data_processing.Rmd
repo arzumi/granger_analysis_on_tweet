@@ -1,0 +1,437 @@
+---
+title: "Data_Processing"
+author: "Siqing Xu - 1005949333"
+date: "2024-01-25"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(knitr)
+library(kableExtra)
+
+
+setwd("~/Desktop/CSC494/R_pkg")
+
+source("data_collecting.R")
+
+res <- data_collection(db_list, uri)
+
+```
+
+```{r}
+# the res is a 6x4 data frame, where each row represents 
+column_names <- c("com1", "com2", "com3", "com4")
+row_names <- c("original_tweet", 
+               "retweets_of_in_com", 
+               "retweets_of_out_com", 
+               "retweets_of_in_com_by_out", 
+               "retweets_of_out_com_by_in",
+               "user_info")
+
+empty_matrix <- matrix("", nrow = length(row_names), ncol = length(column_names), dimnames = list(row_names, column_names))
+empty_table <- as.data.frame(empty_matrix)
+print(empty_table)
+```
+
+
+
+
+# Original Tweet Time Series
+
+```{r}
+original_tweet_c1 <- res[[1]][[1]]
+
+# install.packages('xts')
+library(xts)
+# install.packages('zoo')
+library(zoo)
+
+# for original tweets frequency table
+date <- as.Date(original_tweet_c1$created_at)
+originalt_frequency_table <- table(date)
+originalt_frequency_table <- as.data.frame(originalt_frequency_table)
+originalt_frequency_table$date <- as.Date(originalt_frequency_table$date)
+
+
+z <- zoo(originalt_frequency_table$Freq, originalt_frequency_table$date)
+
+# create a full sequence of dates
+all_dates <- seq(start(z), end(z), by='day')
+
+# interpolate missing value
+z_continuous <- na.approx(z, xout = all_dates)
+
+# Calculate moving average, here using a window of 3 days
+moving_avg <- rollapply(z_continuous, width = 3, FUN = mean, partial = TRUE, align = 'right')
+
+# start_date <- as.Date("2020-06-29")
+# end_date <- as.Date("2022-03-23")
+# desired_dates <- seq(start_date, end_date, by = "days")
+
+# Load ggplot2 for plotting
+library(ggplot2)
+
+# Create a data frame from the continuous and smoothed data
+originalt_plot_data <- data.frame(
+  Date = index(moving_avg),
+  Frequency = coredata(z_continuous),
+  MovingAvg = coredata(moving_avg)
+)
+
+
+```
+
+# Retweet Time Series
+
+
+```{r}
+retweets_of_in_com_c1 <- res[[2]][[1]]
+
+# for retweets frequency table
+date <- as.Date(retweets_of_in_com_c1$created_at)
+retweet_frequency_table <- table(date)
+retweet_frequency_table <- as.data.frame(retweet_frequency_table)
+retweet_frequency_table$date <- as.Date(retweet_frequency_table$date)
+
+z <- zoo(retweet_frequency_table$Freq, retweet_frequency_table$date)
+all_dates <- seq(start(z), end(z), by='day')
+z_continuous <- na.approx(z, xout = all_dates)
+moving_avg <- rollapply(z_continuous, width = 3, FUN = mean, partial = TRUE, align = 'right')
+
+retweet_plot_data <- data.frame(
+  Date = index(moving_avg),
+  Frequency = coredata(z_continuous),
+  MovingAvg = coredata(moving_avg)
+)
+
+
+# create time series
+original_tweet_ts_c1 <- xts(originalt_frequency_table$Freq, order.by = originalt_frequency_table$date)
+retweets_of_in_com_ts_c1 <- xts(retweet_frequency_table$Freq, order.by = retweet_frequency_table$date)
+
+# Print the xts time series
+plot(retweets_of_in_com_ts_c1)
+```
+
+```{r}
+# keep recorded dates the same in the original tweet and retweets
+latest_date <- min( max(originalt_plot_data$Date), max(retweet_plot_data$Date))
+earliest_date <- max(min(originalt_plot_data$Date),min(retweet_plot_data$Date))
+originalt_plot_data <- originalt_plot_data[originalt_plot_data$Date <= latest_date & originalt_plot_data$Date >= earliest_date, ]  
+retweet_plot_data <- retweet_plot_data[retweet_plot_data$Date <= latest_date & retweet_plot_data$Date >= earliest_date, ]  
+
+# draw two time series
+ggplot(originalt_plot_data, aes(x = Date)) +
+  geom_line(aes(y = Frequency), colour = "darkblue", linetype = "dashed", lwd = 0.5) +
+  geom_line(aes(y = MovingAvg), colour = "darkred", lwd = 0.5) +
+  labs(title = "Original Tweet Interpolated Data and Moving Average",
+       y = "Frequency",
+       x = "Date") +
+  theme_minimal()
+
+ggplot(retweet_plot_data, aes(x = Date)) +
+  geom_line(aes(y = Frequency), colour = "darkblue", linetype = "dashed", lwd = 0.5) +
+  geom_line(aes(y = MovingAvg), colour = "darkred", lwd = 0.5) +
+  labs(title = "Retweet Interpolated Data and Moving Average",
+       y = "Frequency",
+       x = "Date") +
+  theme_minimal()
+```
+
+
+```{r}
+# create time series
+original_tweet_ts_c1 <- xts(originalt_plot_data$MovingAvg, order.by = originalt_plot_data$Date)
+retweets_of_in_com_ts_c1 <- xts(retweet_plot_data$MovingAvg, order.by = retweet_plot_data$Date)
+plot(original_tweet_ts_c1, col = "darkblue", main = "Comparison of original Tweet and retweet frequency", ylab = "Frequency")
+lines(retweets_of_in_com_ts_c1, col = "lightgreen")
+# legend("topright", legend = c("original tweet", "retweet"), col = c("darkblue", "lightgreen"), lty = 1)
+```
+
+# Getting Pearson correlation coefficient
+```{r}
+rho <- cor(retweets_of_in_com_ts_c1,original_tweet_ts_c1)
+rho
+
+# the number of original tweets tend to increase linearly as the retweets increases
+# strong positive association between the volume of original tweets and their corresponding retweets
+```
+
+
+
+```{r}
+user_info_c1 <- as.data.frame(res[[6]][[1]])
+# how we define the top 10 influencers? 
+top10 <- user_info_c1[(as.numeric(user_info_c1$rank)) <= 10, ]
+top10
+```
+
+
+```{r}
+# Read the file as a character string
+file_content <- readLines("/Users/xusiqing/Desktop/CSC494/openaiapi-main/topics_data/chess_classification_all.txt")
+
+# Combine lines into a single string
+file_content <- paste(file_content, collapse = " ")
+
+# Remove curly braces and extra spaces
+file_content <- gsub("[{}]", "", file_content)
+
+# Split into key-value pairs
+key_value_pairs <- strsplit(file_content, ",")[[1]]
+
+# Split each pair into key and value
+key_value_list <- strsplit(key_value_pairs, ":")
+
+# Extract keys and values
+id <- sapply(key_value_list, function(x) gsub('"', '', trimws(x[1])))
+content <- sapply(key_value_list, function(x) gsub('"', '', trimws(x[2])))
+
+# Create a dataframe without specifying column names
+content_data <- data.frame(id, content, stringsAsFactors = FALSE)
+
+# View the dataframe
+print(content_data)
+```
+
+
+```{r}
+data <- read_csv("/Users/xusiqing/Desktop/CSC494/original.csv")
+original <- data %>%
+  select(user_id, created_at,id)
+str(original)
+original$id <- as.character(original$id)
+original$user_id <- as.character(original$user_id)
+original$type <- as.character('original')
+```
+```{r}
+library(dplyr)
+setwd("/Users/xusiqing/Desktop/CSC494")
+data <- read_csv("/Users/xusiqing/Desktop/CSC494/retweets.csv")
+retweet_in <- data %>%
+  select(user_id, created_at, retweet_user_id,id)
+
+retweet_in$id <- as.character(retweet_in$id)
+retweet_in$user_id <- as.character(retweet_in$user_id)
+retweet_in$retweet_user_id <- as.character(retweet_in$retweet_user_id)
+retweet_in$type <- as.character('retweet_in')
+```
+
+
+
+```{r}
+data <- read_csv("/Users/xusiqing/Desktop/CSC494/retweet_out.csv")
+retweet_out <- data %>%
+  select(user_id, created_at,retweet_user_id,id)
+str(retweet_out)
+retweet_out$id <- as.character(retweet_out$id)
+retweet_out$user_id <- as.character(retweet_out$user_id)
+retweet_out$retweet_user_id <- as.character(retweet_out$retweet_user_id)
+retweet_out$type <- as.character('retweet_out')
+```
+```{r}
+data <- read_csv("/Users/xusiqing/Desktop/CSC494/retweet_out_by_in.csv")
+retweet_out_by_in <- data %>%
+  select(user_id, created_at,retweet_user_id,id)
+str(retweet_out_by_in)
+retweet_out_by_in$id <- as.character(retweet_out_by_in$id)
+retweet_out_by_in$user_id <- as.character(retweet_out_by_in$user_id)
+retweet_out_by_in$retweet_user_id <- as.character(retweet_out_by_in$retweet_user_id)
+retweet_out_by_in$type <- as.character('retweet_out_by_in')
+```
+
+```{r}
+user_id <- read_csv("/Users/xusiqing/Desktop/CSC494/users.csv")
+
+user_id$user_id <- as.character(user_id$user_id)
+```
+
+
+```{r}
+
+d1 <- merge(original, content_data, by = "id")
+
+d2 <- merge(retweet_in, content_data, by = "id")
+
+d3 <- merge(retweet_out, content_data, by = "id")
+
+d4 <- merge(retweet_out_by_in, content_data, by = "id")
+
+combined_retweet <- bind_rows(d2, d3, d4)
+```
+
+```{r}
+retweet_rank <- left_join(combined_retweet, user_id, by = c("retweet_user_id" = "user_id"))
+
+original_rank <- left_join(d1, user_id, by = "user_id")
+
+all_tweet <- bind_rows(retweet_rank, original_rank)
+
+
+all_tweet$created_at <- as.Date(all_tweet$created_at)
+
+print(all_tweet)
+```
+
+```{r}
+
+# by rank
+
+all_tweet_by_rank <- all_tweet %>%
+  mutate(user_type = ifelse(is.na(rank) | rank > 10 ,"consumer","influencer"))
+
+
+# by selected influencer id
+# Define the list of selected influencer ranks
+# influencer_rank <- c(2, 4, 51, 15,19,17,26,22,3,10)
+
+influencer_rank <- c(2, 4)
+
+all_tweet_by_id <- all_tweet %>%
+  mutate(user_type = ifelse(rank %in% influencer_rank, "influencer", "consumer"))
+
+
+group_by_rank <- all_tweet_by_rank %>%
+  group_by(created_at, content, user_type) %>%
+  summarise(count = n())
+
+
+group_by_id <- all_tweet_by_id %>%
+  group_by(created_at, content, user_type) %>%
+  summarise(count = n())
+
+```
+
+```{r}
+transformed_data <- group_by_rank %>%
+  pivot_wider(
+    names_from = user_type,   # Use user_type values to create new column names
+    values_from = count,      # Fill new columns with count values
+    names_prefix = "",        # Add a prefix to the new column names
+    values_fill = 0           # Fill missing values with 0
+  ) %>%
+  rename(
+    consumer_count = consumer,     # Rename the column for consumers
+    influencer_count = influencer  # Rename the column for influencers
+  )
+
+# Display the transformed data
+print(transformed_data)
+
+
+transformed_data <- group_by_id %>%
+  pivot_wider(
+    names_from = user_type,   # Use user_type values to create new column names
+    values_from = count,      # Fill new columns with count values
+    names_prefix = "",        # Add a prefix to the new column names
+    values_fill = 0           # Fill missing values with 0
+  ) %>%
+  rename(
+    consumer_count = consumer,     # Rename the column for consumers
+    influencer_count = influencer  # Rename the column for influencers
+  )
+
+# Display the transformed data
+print(transformed_data)
+
+
+
+top10content_data <- transformed_data %>% filter(content %in% c("Chess Events and Tournaments",
+"Chess Training and Improvement",
+"Social Media Impact on Chess", 
+"Player Performances and Strategies",
+"Online Chess Competitions",
+"Chess Legends and Personalities",
+"Tournament Results and Standings", 
+"Political and Social Issues in Chess",
+"Health and Wellness in Chess",
+"Chess Literature and Media"))
+
+df.pd <- pdata.frame(top10content_data, index = c("content"), drop.index = FALSE)
+
+grangertest(influencer_count ~ consumer_count, data = df.pd, order = 2L)
+```
+
+
+```{r}
+# write.csv(group_by_rank, "/Users/xusiqing/Desktop/group_by_rank.csv", row.names = FALSE)
+write.csv(all_tweet_by_rank, "/Users/xusiqing/Desktop/all_tweet_by_rank.csv", row.names = FALSE)
+write.csv(all_tweet_by_id, "/Users/xusiqing/Desktop/all_tweet_by_id.csv", row.names = FALSE)
+# write.csv(group_by_id, "/Users/xusiqing/Desktop/group_by_id.csv", row.names = FALSE)
+```
+
+
+```{r}
+df <- read_csv("/Users/xusiqing/Desktop/CSC494/filling_zero_rank.csv")
+
+grangertest(influencer~ consumer, data = df, order = 7L)
+
+consumer_ts <- ts(df$consumer, frequency = 1)
+influencer_ts <- ts(df$influencer, frequency = 1)
+
+library(lmtest)
+# install.packages('tseries')
+library(tseries)
+#install.packages('vars')
+library(vars)
+adf.test(consumer_ts)
+adf.test(influencer_ts)
+
+var_selection <- VARselect(cbind(consumer_ts, influencer_ts), lag.max = 10, type = "const")
+chosen_lag <- var_selection$selection["AIC(n)"]
+
+
+grangertest(influencer_ts ~ consumer_ts, order = 1)
+```
+```{r}
+df <- read_csv("/Users/xusiqing/Desktop/CSC494/top10rank_top2inf.csv")
+
+grangertest(influencer~ consumer, data = df, order = 7L)
+
+consumer_ts <- ts(df$consumer, frequency = 1)
+influencer_ts <- ts(df$influencer, frequency = 1)
+
+library(lmtest)
+# install.packages('tseries')
+library(tseries)
+#install.packages('vars')
+library(vars)
+adf.test(consumer_ts)
+adf.test(influencer_ts)
+
+var_selection <- VARselect(cbind(influencer_ts,consumer_ts), lag.max = 10, type = "const")
+chosen_lag <- var_selection$selection["AIC(n)"]
+
+
+grangertest(influencer_ts ~ consumer_ts, order = 7)
+```
+
+
+```{r}
+df <- read_csv("/Users/xusiqing/Desktop/id2_top10content.csv")
+grangertest(influencer~ consumer, data = df, order = 7L)
+
+consumer_ts <- ts(df$consumer, frequency = 1)
+influencer_ts <- ts(df$influencer, frequency = 1)
+
+library(lmtest)
+# install.packages('tseries')
+library(tseries)
+#install.packages('vars')
+library(vars)
+adf.test(consumer_ts)
+adf.test(influencer_ts)
+
+var_selection <- VARselect(cbind(influencer_ts,consumer_ts), lag.max = 10, type = "const")
+chosen_lag <- var_selection$selection["AIC(n)"]
+
+
+grangertest(influencer_ts ~ consumer_ts, order = 7)
+```
+```
+
+
